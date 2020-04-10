@@ -13,12 +13,12 @@ import yaml
 from addict import Dict
 from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
-from torchvision.transforms import Compose, ToTensor, RandomResizedCrop
-from torchvision.transforms import ColorJitter, RandomHorizontalFlip, Normalize
+import torchvision.transforms as transforms
+
 
 from libs.functions import AverageMeter, ProgressMeter, accuracy
-from libs.loader import load_pict
-# from libs.models import Classifier
+from libs.loader import load_pict, load_pict2
+from libs.models import Classifier_resnet
 # from libs.transformer import MyTransformer
 
 
@@ -66,8 +66,8 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        x = sample['img']
-        t = sample['class_id']
+        x = sample[0]
+        t = sample[1]
 
         x = x.to(device)
         t = t.to(device)
@@ -154,7 +154,7 @@ def main():
 
     if not os.path.exists(CONFIG.result_path):
         os.makedirs(CONFIG.result_path)
-    shutil.copy(args.config, result_path)
+    shutil.copy(args.config, CONFIG.result_path)
 
     # cpu or cuda
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -166,18 +166,18 @@ def main():
 
     transform = transforms.Compose(
             [transforms.RandomHorizontalFlip(),
-             transforms.Resize((args.resolution,args.resolution)),
-             transforms.RandomResizedCrop(size=(args.resolution,args.resolution)),
+             transforms.Resize((CONFIG.width,CONFIG.height)),
+             transforms.RandomResizedCrop(size=(CONFIG.width,CONFIG.height)),
              transforms.ToTensor()
              ])
 
     # Dataloader
     # if data are given in txt file format
-    train_data = load_pict(CONFIG.tr_path_data, transform=transforms)
-    test_data = load_pict(CONFIG.te_path_data, transform=transforms)
+    # train_data = load_pict(CONFIG.tr_path_data, transform=transform)
+    # test_data = load_pict(CONFIG.te_path_data, transform=transform)
     # if data are given in directory format
-    train_data = load_pict2(CONFIG.data_path, transform=transforms)
-    test_data = load_pict2(CONFIG.data_path, transform=transforms, test=True)
+    train_data = load_pict2(CONFIG.data_path, transform=transform)
+    test_data = load_pict2(CONFIG.data_path, transform=transform, test=True)
 
     train_loader = DataLoader(
         train_data,
@@ -189,7 +189,7 @@ def main():
     )
 
     val_loader = DataLoader(
-        val_data,
+        test_data,
         batch_size=1,
         shuffle=False,
         num_workers=CONFIG.num_workers,
@@ -202,27 +202,11 @@ def main():
     # the number of classes
     n_classes = CONFIG.n_classes
 
-    if CONFIG.model == 'resnet18':
-        print('ResNet18 will be used as a model.')
-        model = torchvision.models.resnet18(pretrained=True)
-        in_features = model.fc.in_features
-        model.fc = nn.Linear(
-            in_features=in_features,
-            out_features=n_classes,
-            bias=True
-        )
-    elif CONFIG.model == 'resnet34':
-        print('ResNet34 will be used as a model.')
-        model = torchvision.models.resnet34(pretrained=True)
-        in_features = model.fc.in_features
-        model.fc = nn.Linear(
-            in_features=in_features,
-            out_features=n_classes,
-            bias=True
-        )
+    if CONFIG.model == 'resnet50':
+        print('ResNet50 will be used as a model.')
+        model = Classifier_resnet(n_classes)
     else:
-        print('There is no model appropriate to your choice. '
-              'You have to choose resnet18 or resnet34 as a model in config.yaml')
+        print('There is no model appropriate to your choice.')
         sys.exit(1)
 
     # send the model to cuda/cpu

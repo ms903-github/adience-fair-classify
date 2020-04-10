@@ -43,12 +43,12 @@ def load_pict2(load_path, transform=None, test=False):
         def __init__(self, file_path, transform, test):
             #path: ./datasets/train/0/*.jpg
             if not test:
-                pathlist = glob.glob(os.path.join("load_path", "train/*/*.jpg"))
+                pathlist = glob.glob(os.path.join(load_path, "train/*/*.jpg"))
                 labellist = []
                 for path in pathlist:
                     labellist.append(int(path.split("/")[3]))
             else:
-                pathlist = glob.glob(os.path.join("load_path", "test/*/*.jpg"))
+                pathlist = glob.glob(os.path.join(load_path, "test/*/*.jpg"))
                 labellist = []
                 for path in pathlist:
                     labellist.append(int(path.split("/")[3]))
@@ -58,12 +58,12 @@ def load_pict2(load_path, transform=None, test=False):
             self.transform = transform
 
         def __len__(self):
-            return len(self.df)
+            return len(self.pathlist)
         
         def __getitem__(self, idx):
             img_path = self.pathlist[idx]
             label = self.labellist[idx]
-            img = Image.open(img_path)
+            img = Image.open(img_path).convert("RGB")
             if self.transform:
                 img = self.transform(img)
             return img, label

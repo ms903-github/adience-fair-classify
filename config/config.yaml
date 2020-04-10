@@ -1,11 +1,12 @@
-model: resnet18
+model: resnet50
 
 # criterion: crossentropy
 
-class_weight: True    # if you use class weight to calculate cross entropy or not
+class_weight: False    # if you use class weight to calculate cross entropy or not
 writer_flag: True      # if you use tensorboardx or not
 
 batch_size: 16
+n_classes: 102
 
 width: 224
 height: 224
