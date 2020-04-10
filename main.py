@@ -173,10 +173,11 @@ def main():
 
     # Dataloader
     # if data are given in txt file format
-    train_data = load_pict(CONFIG.path_data, transform=transforms)
-
+    train_data = load_pict(CONFIG.tr_path_data, transform=transforms)
+    test_data = load_pict(CONFIG.te_path_data, transform=transforms)
     # if data are given in directory format
     train_data = load_pict2(CONFIG.data_path, transform=transforms)
+    test_data = load_pict2(CONFIG.data_path, transform=transforms, test=True)
 
     train_loader = DataLoader(
         train_data,

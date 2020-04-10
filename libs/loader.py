@@ -36,3 +36,35 @@ def load_pict(load_path, transform=None):
                 img = self.transform(img)
             return img, label
     return MyDataset(load_path, transform=transform)
+
+
+def load_pict2(load_path, transform=None, test=False):
+    class MyDataset(Dataset):
+        def __init__(self, file_path, transform, test):
+            #path: ./datasets/train/0/*.jpg
+            if not test:
+                pathlist = glob.glob(os.path.join("load_path", "train/*/*.jpg"))
+                labellist = []
+                for path in pathlist:
+                    labellist.append(int(path.split("/")[3]))
+            else:
+                pathlist = glob.glob(os.path.join("load_path", "test/*/*.jpg"))
+                labellist = []
+                for path in pathlist:
+                    labellist.append(int(path.split("/")[3]))
+
+            self.pathlist = pathlist
+            self.labellist = labellist
+            self.transform = transform
+
+        def __len__(self):
+            return len(self.df)
+        
+        def __getitem__(self, idx):
+            img_path = self.pathlist[idx]
+            label = self.labellist[idx]
+            img = Image.open(img_path)
+            if self.transform:
+                img = self.transform(img)
+            return img, label
+    return MyDataset(load_path, transform=transform, test=test)
