@@ -10,61 +10,162 @@ from PIL import Image
 import random
 
 # if data is given as (path label \n) in txt file
-def load_pict(load_path, transform=None):
+def load_pict(load_path, gen_mode="both", transform=None):
     class MyDataset(Dataset):
-        def __init__(self, file_path, transform):
+        def __init__(self, file_path, gen_mode=gen_mode, transform=None):
+            self.gen_mode = gen_mode
             pathlist = []
             labellist = []
+            genlist = []
             with open(file_path, "r") as f:
                 lines = f.readlines()
             for line in lines:
-                path, label = line.split(" ")
+                path, age, gen = line.split()
+                age = int(age)
+                # male : 1 female : 0
+                if self.gen_mode == "both":
+                    if gen == "m":
+                        genlist.append(1)
+                    else:
+                        genlist.append(0)
+                elif self.gen_mode == "male":
+                    if not gen == "m":
+                        continue
+                    genlist.append(1)
+                elif self.gen_mode == "female":
+                    if not gen == "f":
+                        continue
+                    genlist.append(0)
                 pathlist.append(path)
-                labellist.append(int(label))
-            self.pathlist = pathlist
-            self.labellist = labellist
-            self.transform = transform
-
-        def __len__(self):
-            return len(self.df)
-        
-        def __getitem__(self, idx):
-            img_path = self.pathlist[idx]
-            label = self.labellist[idx]
-            img = Image.open(img_path)
-            if self.transform:
-                img = self.transform(img)
-            return img, label
-    return MyDataset(load_path, transform=transform)
-
-
-def load_pict2(load_path, transform=None, test=False):
-    class MyDataset(Dataset):
-        def __init__(self, file_path, transform, test):
-            #path: ./datasets/train/0/*.jpg
-            if not test:
-                pathlist = glob.glob(os.path.join(load_path, "train/*/*.jpg"))
-                labellist = []
-                for path in pathlist:
-                    labellist.append(int(path.split("/")[3]))
-            else:
-                pathlist = glob.glob(os.path.join(load_path, "test/*/*.jpg"))
-                labellist = []
-                for path in pathlist:
-                    labellist.append(int(path.split("/")[3]))
+                
+                if 0<=age<4:
+                    labellist.append(0)
+                elif 4<=age<8:
+                    labellist.append(1)
+                elif 8<=age<15:
+                    labellist.append(3)
+                elif 15<=age<25:
+                    labellist.append(4)
+                elif 25<=age<38:
+                    labellist.append(5)
+                elif 38<=age<48:
+                    labellist.append(6)
+                elif 48<=age<53:
+                    labellist.append(7)
+                elif 53<=age:
+                    labellist.append(8)
+                else:
+                    continue
 
             self.pathlist = pathlist
-            self.labellist = labellist
+            self.agelist = labellist
+            self.genlist = genlist
             self.transform = transform
+            print(len(pathlist))
+            print(len(labellist))
 
         def __len__(self):
             return len(self.pathlist)
         
         def __getitem__(self, idx):
             img_path = self.pathlist[idx]
-            label = self.labellist[idx]
-            img = Image.open(img_path).convert("RGB")
+            age = self.agelist[idx]
+            gen = self.genlist[idx]
+            img = Image.open(os.path.join("./datasets/faces", img_path))
             if self.transform:
                 img = self.transform(img)
-            return img, label
-    return MyDataset(load_path, transform=transform, test=test)
+            return img, age, gen
+    return MyDataset(load_path, transform=transform)
+
+
+# 男女およびnum_sampleをそれぞれ指定するloader
+def load_pict2(file_path, num_f_sample, num_m_sample, transform=None):
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+    f_lines = []
+    m_lines = []
+    for line in lines:
+        path, age, gen = line.split()
+        if gen == "f":
+            f_lines.append(line)
+        elif gen == "m":
+            m_lines.append(line)
+    f_lines = random.sample(f_lines, num_f_sample)
+    m_lines = random.sample(m_lines, num_m_sample)
+
+    f_pathlist = []
+    m_pathlist = []
+    f_labellist = []
+    m_labellist = []
+
+    for line in f_lines:
+        path, age, _ = line.split()
+        age = int(age)
+        if 0<=age<4:
+            f_labellist.append(0)
+        elif 4<=age<8:
+            f_labellist.append(1)
+        elif 8<=age<15:
+            f_labellist.append(3)
+        elif 15<=age<25:
+            f_labellist.append(4)
+        elif 25<=age<38:
+            f_labellist.append(5)
+        elif 38<=age<48:
+            f_labellist.append(6)
+        elif 48<=age<53:
+            f_labellist.append(7)
+        elif 53<=age:
+            f_labellist.append(8)
+        else:
+            continue
+        f_pathlist.append(path)
+
+    for line in m_lines:
+        path, age, _ = line.split()
+        age = int(age)
+        if 0<=age<4:
+            m_labellist.append(0)
+        elif 4<=age<8:
+            m_labellist.append(1)
+        elif 8<=age<15:
+            m_labellist.append(3)
+        elif 15<=age<25:
+            m_labellist.append(4)
+        elif 25<=age<38:
+            m_labellist.append(5)
+        elif 38<=age<48:
+            m_labellist.append(6)
+        elif 48<=age<53:
+            m_labellist.append(7)
+        elif 53<=age:
+            m_labellist.append(8)
+        else:
+            continue
+        m_pathlist.append(path)
+
+    pathlist = f_pathlist + m_pathlist
+    agelist = f_labellist + m_labellist
+    genlist = [0 for i in range(len(f_pathlist))] + [1 for i in range(len(m_pathlist))]
+    transform = transform
+    print(len(pathlist))
+    print(len(agelist))
+
+    class MyDataset(Dataset):
+        def __init__(self, pathlist, labellist, genlist, transform=None):
+            self.pathlist = pathlist
+            self.labellist = labellist
+            self.genlist = genlist
+            self.transform = transform
+        def __len__(self):
+            return len(self.pathlist)
+        
+        def __getitem__(self, idx):
+            img_path = self.pathlist[idx]
+            label = self.labellist[idx]
+            gen = self.genlist[idx]
+            img = Image.open(os.path.join("./datasets/faces", img_path))
+            if self.transform:
+                img = self.transform(img)
+            return img, label, gen
+    return MyDataset(pathlist, agelist, genlist, transform=transform)

@@ -5,18 +5,18 @@ model: resnet50
 class_weight: False    # if you use class weight to calculate cross entropy or not
 writer_flag: True      # if you use tensorboardx or not
 
-batch_size: 16
-n_classes: 102
-
+batch_size: 64
+n_classes: 10
 width: 224
 height: 224
-
 num_workers: 2
 max_epoch: 50
+num_f_sample: 1000
+num_m_sample: 5700
+adversarial: False
 
-optimizer: SGD
+optimizer: Adam
 scheduler: onplateau
-
 learning_rate: 0.0005
 lr_patience: 10       # Patience of LR scheduler
 momentum: 0.9         # momentum of SGD
@@ -25,5 +25,6 @@ weight_decay: 0.0001  # weight decay
 nesterov: True        # enables Nesterov momentum
 
 path_data: ./datasets/path.txt
-data_path: ./datasets
-result_path: ./result/cfg1/
+tr_data_path: ./datasets/tr_data0.txt
+te_data_path: ./datasets/te_data0.txt
+result_path: ./result/sp0_biassed2/

@@ -9,16 +9,18 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import yaml
+import math
 
 from addict import Dict
 from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
+import torchvision.models as models
 
 
 from libs.functions import AverageMeter, ProgressMeter, accuracy
 from libs.loader import load_pict, load_pict2
-from libs.models import Classifier_resnet
+from libs.models import Classifier_resnet, Classifier, Discriminator
 # from libs.transformer import MyTransformer
 
 
@@ -80,7 +82,7 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
 
         # measure accuracy and record loss
         acc1 = accuracy(output, t, topk=(1,))
-        losses.update(loss.item(), batch_size)
+        losses.update(math.sqrt(loss.item())*100, batch_size)
         top1.update(acc1[0].item(), batch_size)
 
         # keep predicted results and gts for calculate F1 Score
@@ -103,6 +105,7 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
 
     # calculate F1 Score
     f1s = f1_score(gts, preds, average="macro")
+    
 
     return losses.avg, top1.avg, f1s
 
@@ -120,8 +123,8 @@ def validate(val_loader, model, criterion, device):
 
     with torch.no_grad():
         for i, sample in enumerate(val_loader):
-            x = sample['img']
-            t = sample['class_id']
+            x = sample[0]
+            t = sample[1]
             x = x.to(device)
             t = t.to(device)
 
@@ -133,7 +136,7 @@ def validate(val_loader, model, criterion, device):
 
             # measure accuracy and record loss
             acc1 = accuracy(output, t, topk=(1,))
-            losses.update(loss.item(), batch_size)
+            losses.update(math.sqrt(loss.item())*100, batch_size)
             top1.update(acc1[0].item(), batch_size)
 
             # keep predicted results and gts for calculate F1 Score
@@ -142,7 +145,7 @@ def validate(val_loader, model, criterion, device):
             preds += list(pred.to("cpu").numpy())
 
     f1s = f1_score(gts, preds, average="macro")
-
+    
     return losses.avg, top1.avg, f1s
 
 
@@ -176,95 +179,106 @@ def main():
     # train_data = load_pict(CONFIG.tr_path_data, transform=transform)
     # test_data = load_pict(CONFIG.te_path_data, transform=transform)
     # if data are given in directory format
-    train_data = load_pict2(CONFIG.data_path, transform=transform)
-    test_data = load_pict2(CONFIG.data_path, transform=transform, test=True)
+    # train_data = load_pict(CONFIG.tr_data_path, transform=transform)
+    train_data = load_pict2(CONFIG.tr_data_path, CONFIG.num_f_sample, CONFIG.num_m_sample, transform=transform)
+    test_data = load_pict(CONFIG.te_data_path, transform=transform)
+    test_f_data = load_pict(CONFIG.te_data_path, gen_mode="female", transform=transform)
+    test_m_data = load_pict(CONFIG.te_data_path, gen_mode="male", transform=transform)
 
-    train_loader = DataLoader(
-        train_data,
-        batch_size=CONFIG.batch_size,
-        shuffle=True,
-        num_workers=CONFIG.num_workers,
-        pin_memory=True,
-        drop_last=True
-    )
-
-    val_loader = DataLoader(
-        test_data,
-        batch_size=1,
-        shuffle=False,
-        num_workers=CONFIG.num_workers,
-        pin_memory=True
-    )
+    train_loader = DataLoader(train_data, batch_size=CONFIG.batch_size, shuffle=True, num_workers=CONFIG.num_workers, pin_memory=True, drop_last=True)
+    val_loader = DataLoader(test_data, batch_size=1, shuffle=False, num_workers=CONFIG.num_workers, pin_memory=True)
+    val_f_loader = DataLoader(test_f_data, batch_size=1, shuffle=False, num_workers=CONFIG.num_workers, pin_memory=True)
+    val_m_loader = DataLoader(test_m_data, batch_size=1, shuffle=False, num_workers=CONFIG.num_workers, pin_memory=True)
 
     # load model
     print('\n------------------------Loading Model------------------------\n')
 
-    # the number of classes
-    n_classes = CONFIG.n_classes
+    if CONFIG.adversarial:
+        if CONFIG.model == 'resnet50':
+            print('ResNet50 will be used as a model.')
+            model_g = models.resnet50(pretrained=True).to(device)
+        else:
+            print('There is no model appropriate to your choice.')
+            sys.exit(1)
 
-    if CONFIG.model == 'resnet50':
-        print('ResNet50 will be used as a model.')
-        model = Classifier_resnet(n_classes)
+        model_h = Classifier().to(device)
+        model_d = Discriminator().to(device)
+        optimizer_gh = optim.Adam(model_g.parameters(), lr=CONFIG.learning_rate)
+        optimizer_d = optim.Adam(model_d.parameters(), lr=CONFIG.learning_rate)
+        
+
     else:
-        print('There is no model appropriate to your choice.')
-        sys.exit(1)
+        if CONFIG.model == 'resnet50':
+            print('ResNet50 will be used as a model.')
+            model = Classifier_resnet()
+            for p in model.resnet.parameters():
+                p.requires_grad = True
+        else:
+            print('There is no model appropriate to your choice.')
+            sys.exit(1)
 
-    # send the model to cuda/cpu
-    model.to(device)
+        # send the model to cuda/cpu
+        model.to(device)
 
-    if CONFIG.optimizer == 'Adam':
-        print(CONFIG.optimizer + ' will be used as an optimizer.')
-        optimizer = optim.Adam(model.parameters(), lr=CONFIG.learning_rate)
-    elif CONFIG.optimizer == 'SGD':
-        print(CONFIG.optimizer + ' will be used as an optimizer.')
-        optimizer = optim.SGD(
-            model.parameters(),
-            lr=CONFIG.learning_rate,
-            momentum=CONFIG.momentum,
-            dampening=CONFIG.dampening,
-            weight_decay=CONFIG.weight_decay,
-            nesterov=CONFIG.nesterov
+        if CONFIG.optimizer == 'Adam':
+            print(CONFIG.optimizer + ' will be used as an optimizer.')
+            optimizer = optim.Adam(model.parameters(), lr=CONFIG.learning_rate)
+        elif CONFIG.optimizer == 'SGD':
+            print(CONFIG.optimizer + ' will be used as an optimizer.')
+            optimizer = optim.SGD(
+                model.parameters(),
+                lr=CONFIG.learning_rate,
+                momentum=CONFIG.momentum,
+                dampening=CONFIG.dampening,
+                weight_decay=CONFIG.weight_decay,
+                nesterov=CONFIG.nesterov
+            )
+        else:
+            print(
+                'There is no optimizer which suits to your option.'
+                'You have to choose SGD or Adam as an optimizer in config.yaml')
+
+        # learning rate scheduler
+        if CONFIG.scheduler == 'onplateau':
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 'min', patience=CONFIG.lr_patience
+            )
+        else:
+            scheduler = None
+
+        begin_epoch = 0
+
+        # create log
+        best_acc1 = 0
+        log = pd.DataFrame(
+            columns=[
+                'epoch', 'lr', 'train_loss', 'val_loss',
+                'train_acc@1', 'val_acc@1', 'train_f1s', 'val_f1s', 
+                'f_val_acc1', 'f_val_f1s', 'm_val_acc1', 'm_val_f1s'
+            ]
         )
-    else:
-        print(
-            'There is no optimizer which suits to your option.'
-            'You have to choose SGD or Adam as an optimizer in config.yaml')
 
-    # learning rate scheduler
-    if CONFIG.scheduler == 'onplateau':
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, 'min', patience=CONFIG.lr_patience
-        )
-    else:
-        scheduler = None
+        # criterion for loss
+        if CONFIG.class_weight:
+            criterion = nn.CrossEntropyLoss(
+                weight=get_class_weight(n_classes=n_classes).to(device)
+            )
+        else:
+            criterion = nn.CrossEntropyLoss()
 
-    begin_epoch = 0
-
-    # create log
-    best_acc1 = 0
-    log = pd.DataFrame(
-        columns=[
-            'epoch', 'lr', 'train_loss', 'val_loss',
-            'train_acc@1', 'val_acc@1', 'train_f1s', 'val_f1s'
-        ]
-    )
-
-    # criterion for loss
-    if CONFIG.class_weight:
-        criterion = nn.CrossEntropyLoss(
-            weight=get_class_weight(n_classes=n_classes).to(device)
-        )
-    else:
-        criterion = nn.CrossEntropyLoss()
-
-    # train and validate model
-    print('\n------------------------Start training------------------------\n')
-    train_losses = []
-    val_losses = []
-    train_top1_accuracy = []
-    val_top1_accuracy = []
-    train_f1_score = []
-    val_f1_score = []
+        # train and validate model
+        print('\n------------------------Start training------------------------\n')
+        train_losses = []
+        val_losses = []
+        train_top1_accuracy = []
+        val_top1_accuracy = []
+        train_f1_score = []
+        val_f1_score = []
+        f_val_top1_acc = []
+        f_val_f1_score = []
+        m_val_top1_acc = []
+        m_val_f1_score = []
+        
 
     for epoch in range(begin_epoch, CONFIG.max_epoch):
 
@@ -296,19 +310,37 @@ def main():
                 os.path.join(CONFIG.result_path, 'best_acc1_model.prm')
             )
 
-        # save checkpoint every epoch
-        save_checkpoint(
-            CONFIG.result_path, epoch, model, optimizer, best_acc1, scheduler)
+        print(
+            'epoch: {}(both)\tlr: {}\ttrain loss: {:.4f}\tval loss: {:.4f}\tval_acc1: {:.5f}\tval_f1s: {:.5f}'
+            .format(epoch, optimizer.param_groups[0]['lr'], train_losses[-1],
+                    val_losses[-1], val_top1_accuracy[-1], val_f1_score[-1])
+        )
+        # validation(female)
+        f_val_loss, f_val_acc1, f_val_f1s = validate(
+            val_f_loader, model, criterion, device)
 
-        # save a model every 10 epoch
-        if epoch % 10 == 0 and epoch != 0:
-            save_checkpoint(
-                CONFIG.result_path, epoch, model, optimizer,
-                best_acc1, scheduler, add_epoch2name=True
-            )
+        f_val_top1_acc.append(f_val_acc1)
+        f_val_f1_score.append(f_val_f1s)
 
-        
-        # write logs to dataframe and csv file
+        print(
+            'epoch: {}(female)\tlr: {}\ttrain loss: {:.4f}\tval loss: {:.4f}\tval_acc1: {:.5f}\tval_f1s: {:.5f}'
+            .format(epoch, optimizer.param_groups[0]['lr'], train_losses[-1],
+                    f_val_loss, f_val_acc1, f_val_f1s)
+        )
+        # validation(male)
+        m_val_loss, m_val_acc1, m_val_f1s = validate(
+            val_m_loader, model, criterion, device)
+
+        m_val_top1_acc.append(m_val_acc1)
+        m_val_f1_score.append(m_val_f1s)
+
+        print(
+            'epoch: {}(male)\tlr: {}\ttrain loss: {:.4f}\tval loss: {:.4f}\tval_acc1: {:.5f}\tval_f1s: {:.5f}'
+            .format(epoch, optimizer.param_groups[0]['lr'], train_losses[-1],
+                    m_val_loss, m_val_acc1, m_val_f1s)
+        )
+
+    # write logs to dataframe and csv file
         tmp = pd.Series([
             epoch,
             optimizer.param_groups[0]['lr'],
@@ -317,18 +349,16 @@ def main():
             train_top1_accuracy[-1],
             val_top1_accuracy[-1],
             train_f1_score[-1],
-            val_f1_score[-1]
+            val_f1_score[-1],
+            f_val_top1_acc[-1],
+            f_val_f1_score[-1],
+            m_val_top1_acc[-1],
+            m_val_f1_score[-1]
         ], index=log.columns
         )
 
         log = log.append(tmp, ignore_index=True)
         log.to_csv(os.path.join(CONFIG.result_path, 'log.csv'), index=False)
-
-        print(
-            'epoch: {}\tlr: {}\ttrain loss: {:.4f}\tval loss: {:.4f}\tval_acc1: {:.5f}\tval_f1s: {:.5f}'
-            .format(epoch, optimizer.param_groups[0]['lr'], train_losses[-1],
-                    val_losses[-1], val_top1_accuracy[-1], val_f1_score[-1])
-        )
 
     # save models
     torch.save(
