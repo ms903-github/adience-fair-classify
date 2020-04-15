@@ -5,14 +5,14 @@ model: resnet50
 class_weight: False    # if you use class weight to calculate cross entropy or not
 writer_flag: True      # if you use tensorboardx or not
 
-batch_size: 64
+batch_size: 32
 n_classes: 10
 width: 224
 height: 224
 num_workers: 2
 max_epoch: 50
-num_f_sample: 1000
-num_m_sample: 5700
+num_f_sample: 3500
+num_m_sample: 3500
 adversarial: False
 
 optimizer: Adam
@@ -27,4 +27,4 @@ nesterov: True        # enables Nesterov momentum
 path_data: ./datasets/path.txt
 tr_data_path: ./datasets/tr_data0.txt
 te_data_path: ./datasets/te_data0.txt
-result_path: ./result/sp0_biassed2/
+result_path: ./result/split0_ex1/

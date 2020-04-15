@@ -37,7 +37,7 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.fc1 = nn.Linear(1000, 500)
         self.fc2 = nn.Linear(500, 50)
-        self.fc3 = nn.Linear(50, 1)
+        self.fc3 = nn.Linear(50, 2)
         self.batchnorm = nn.BatchNorm1d(500)
     def forward(self, x):
         x = F.relu(self.fc1(x))

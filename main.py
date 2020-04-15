@@ -148,6 +148,141 @@ def validate(val_loader, model, criterion, device):
     
     return losses.avg, top1.avg, f1s
 
+def train_adv(train_loader, model_g, model_h, model_d, criterion, optimizer_gh, optimizer_d, epoch, device):
+    model_g.to(device)
+    model_h.to(device)
+    model_d.to(device)
+    # 平均を計算してくれるクラス
+    batch_time = AverageMeter('Time', ':6.3f')
+    data_time = AverageMeter('Data', ':6.3f')
+    losses_g = AverageMeter('Loss_g', ':.4e')
+    top1_g = AverageMeter('Acc@1_g', ':6.2f')
+    losses_d = AverageMeter('Loss_d', ':.4e')
+    top1_d = AverageMeter('Acc@1_d', ':6.2f')
+
+    # 進捗状況を表示してくれるクラス
+    progress = ProgressMeter(
+        len(train_loader),
+        [batch_time, data_time, losses_g, top1_g, losses_d, top1_d],
+        prefix="Epoch: [{}]".format(epoch)
+    )
+
+    # keep predicted results and gts for calculate F1 Score
+    gts = []
+    preds = []
+
+    end = time.time()
+    for i, sample in enumerate(train_loader):
+        # measure data loading time
+        data_time.update(time.time() - end)
+
+        x = sample[0]
+        t = sample[1]
+        g = sample[2]
+
+        x = x.to(device)
+        t = t.to(device)
+        g = g.to(device)
+        batch_size = x.shape[0]
+
+        # train discriminator
+        # model_g.eval()
+        # model_d.train()
+        feat = model_g(x)
+        output = model_d(feat)
+        loss_d = criterion(output, g)
+        optimizer_d.zero_grad()
+        loss_d.backward()
+        optimizer_d.step()
+
+        acc1 = accuracy(output, g, topk=(1,))
+        losses_d.update(loss_d.item(), batch_size)
+        top1_d.update(acc1[0].item(), batch_size)
+
+        # train generator
+        # model_g.train()
+        # model_h.train()
+        # model_d.eval()
+        feat = model_g(x)
+        output = model_h(feat)
+        loss_g = criterion(output, t)
+        # decieve discriminator
+        output_d = model_d(model_g(x))
+        adv_g = torch.LongTensor([0 if i == 1 else 1 for i in g]).to(device)
+        loss_adv_g = criterion(output_d, adv_g)
+        loss_g = loss_g + loss_adv_g
+        optimizer_gh.zero_grad()
+        loss_g.backward()
+        optimizer_gh.step()
+
+        acc1 = accuracy(output, t, topk=(1,))
+        losses_g.update(loss_g.item(), batch_size)
+        top1_g.update(acc1[0].item(), batch_size)
+
+        # keep predicted results and gts for calculate F1 Score
+        _, pred = output.max(dim=1)
+        gts += list(t.to("cpu").numpy())
+        preds += list(pred.to("cpu").numpy())
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        # show progress bar per 50 iteration
+        if i != 0 and i % 50 == 0:
+            progress.display(i)
+
+    # calculate F1 Score
+    f1s = f1_score(gts, preds, average="macro")
+    
+    return losses_g.avg, losses_d.avg, top1_g.avg, top1_d.avg, f1s
+
+
+def validate(val_loader, model, criterion, device, model_h=None, mode=None):
+    losses = AverageMeter('Loss', ':.4e')
+    top1 = AverageMeter('Acc@1', ':6.2f')
+
+    # keep predicted results and gts for calculate F1 Score
+    gts = []
+    preds = []
+
+    # switch to evaluate mode
+    model.eval()
+
+    with torch.no_grad():
+        for i, sample in enumerate(val_loader):
+            x = sample[0]
+            if mode == "d":
+                t = sample[2]
+            else:
+                t = sample[1]
+            x = x.to(device)
+            t = t.to(device)
+
+            batch_size = x.shape[0]
+
+            # compute output and loss
+            if model_h is not None:
+                model_h.eval()
+                output = model_h(model(x))
+            else:
+                output = model(x)
+            loss = criterion(output, t)
+
+            # measure accuracy and record loss
+            acc1 = accuracy(output, t, topk=(1,))
+            losses.update(math.sqrt(loss.item())*100, batch_size)
+            top1.update(acc1[0].item(), batch_size)
+
+            # keep predicted results and gts for calculate F1 Score
+            _, pred = output.max(dim=1)
+            gts += list(t.to("cpu").numpy())
+            preds += list(pred.to("cpu").numpy())
+
+    f1s = f1_score(gts, preds, average="macro")
+    
+    return losses.avg, top1.avg, f1s
+
 
 def main():
     args = get_arguments()
@@ -203,9 +338,55 @@ def main():
 
         model_h = Classifier().to(device)
         model_d = Discriminator().to(device)
-        optimizer_gh = optim.Adam(model_g.parameters(), lr=CONFIG.learning_rate)
+        optimizer_gh = optim.Adam(list(model_g.parameters()) + list(model_h.parameters()), lr=CONFIG.learning_rate)
         optimizer_d = optim.Adam(model_d.parameters(), lr=CONFIG.learning_rate)
         
+        begin_epoch = 0
+
+        # learning rate scheduler
+        if CONFIG.scheduler == 'onplateau':
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer_gh, 'min', patience=CONFIG.lr_patience
+            )
+        else:
+            scheduler = None
+
+        # create log
+        best_acc1 = 0
+        log = pd.DataFrame(
+            columns=[
+                'epoch', 'lr', 'train_loss', 'val_loss',
+                'train_acc@1', 'val_acc@1', 'train_f1s', 'val_f1s', 
+                'f_val_acc1', 'm_val_acc1', 
+                'd_tr_loss', 'd_val_loss', 'd_tr_acc1', 'd_val_acc1', 'd_val_f1s'
+            ]
+        )
+
+        # criterion for loss
+        if CONFIG.class_weight:
+            criterion = nn.CrossEntropyLoss(
+                weight=get_class_weight(n_classes=n_classes).to(device)
+            )
+        else:
+            criterion = nn.CrossEntropyLoss()
+
+        # train and validate model
+        print('\n------------------------Start training------------------------\n')
+        train_losses = []
+        val_losses = []
+        train_top1_accuracy = []
+        val_top1_accuracy = []
+        train_f1_score = []
+        val_f1_score = []
+        f_val_top1_acc = []
+        f_val_f1_score = []
+        m_val_top1_acc = []
+        m_val_f1_score = []
+        d_tr_losses = []
+        d_val_losses = []
+        d_tr_top1_acc = []
+        d_val_top1_acc = []
+        d_val_f1_score = []
 
     else:
         if CONFIG.model == 'resnet50':
@@ -283,86 +464,148 @@ def main():
     for epoch in range(begin_epoch, CONFIG.max_epoch):
 
         # training
-        train_loss, train_acc1, train_f1s = train(
-            train_loader, model, criterion, optimizer, epoch, device)
-
+        if CONFIG.adversarial:
+            train_loss, train_loss_d, train_acc1, train_acc1_d, train_f1s = train_adv(
+                train_loader, model_g, model_h, model_d, criterion, optimizer_gh, optimizer_d, epoch, device)
+        else:
+            train_loss, train_acc1, train_f1s = train(
+                train_loader, model, criterion, optimizer, epoch, device)
         train_losses.append(train_loss)
         train_top1_accuracy.append(train_acc1)
         train_f1_score.append(train_f1s)
+        if CONFIG.adversarial:
+            d_tr_losses.append(train_loss_d)
+            d_tr_top1_acc.append(train_acc1_d)
 
         # validation
-        val_loss, val_acc1, val_f1s = validate(
-            val_loader, model, criterion, device)
-
-        val_losses.append(val_loss)
-        val_top1_accuracy.append(val_acc1)
-        val_f1_score.append(val_f1s)
-
+        if CONFIG.adversarial:
+            val_loss, val_acc1, val_f1s = validate(
+                val_loader, model_g, criterion, device, model_h=model_h)
+            val_losses.append(val_loss)
+            val_top1_accuracy.append(val_acc1)
+            val_f1_score.append(val_f1s)
+            d_val_loss, d_val_acc1, d_val_f1s = validate(
+                val_loader, model_g, criterion, device, model_h=model_h, mode="d"
+            )
+            d_val_losses.append(d_val_loss)
+            d_val_top1_acc.append(d_val_acc1)
+            d_val_f1_score.append(d_val_f1s)    
+            # save a model if top1 acc is higher than ever
+            if best_acc1 < val_top1_accuracy[-1]:
+                best_acc1 = val_top1_accuracy[-1]
+                torch.save(
+                    model_g.state_dict(),
+                    os.path.join(CONFIG.result_path, 'best_acc1_model_g.prm')
+                )
+                torch.save(
+                    model_h.state_dict(),
+                    os.path.join(CONFIG.result_path, 'best_acc1_model_h.prm')
+                )
+            lr = optimizer_gh.param_groups[0]['lr']
+        else:
+            val_loss, val_acc1, val_f1s = validate(
+                val_loader, model, criterion, device)
+            val_losses.append(val_loss)
+            val_top1_accuracy.append(val_acc1)
+            val_f1_score.append(val_f1s)
+            # save a model if top1 acc is higher than ever
+            if best_acc1 < val_top1_accuracy[-1]:
+                best_acc1 = val_top1_accuracy[-1]
+                torch.save(
+                    model.state_dict(),
+                    os.path.join(CONFIG.result_path, 'best_acc1_model.prm')
+                )
+            lr = optimizer.param_groups[0]['lr']
         # scheduler
         if scheduler is not None:
             scheduler.step(val_loss)
 
-        # save a model if top1 acc is higher than ever
-        if best_acc1 < val_top1_accuracy[-1]:
-            best_acc1 = val_top1_accuracy[-1]
-            torch.save(
-                model.state_dict(),
-                os.path.join(CONFIG.result_path, 'best_acc1_model.prm')
-            )
-
         print(
             'epoch: {}(both)\tlr: {}\ttrain loss: {:.4f}\tval loss: {:.4f}\tval_acc1: {:.5f}\tval_f1s: {:.5f}'
-            .format(epoch, optimizer.param_groups[0]['lr'], train_losses[-1],
+            .format(epoch, lr, train_losses[-1],
                     val_losses[-1], val_top1_accuracy[-1], val_f1_score[-1])
         )
         # validation(female)
-        f_val_loss, f_val_acc1, f_val_f1s = validate(
-            val_f_loader, model, criterion, device)
+        if CONFIG.adversarial:
+            f_val_loss, f_val_acc1, f_val_f1s = validate(
+                val_f_loader, model_g, criterion, device, model_h=model_h)
+        else:
+            f_val_loss, f_val_acc1, f_val_f1s = validate(
+                val_f_loader, model, criterion, device)
 
         f_val_top1_acc.append(f_val_acc1)
         f_val_f1_score.append(f_val_f1s)
 
         print(
             'epoch: {}(female)\tlr: {}\ttrain loss: {:.4f}\tval loss: {:.4f}\tval_acc1: {:.5f}\tval_f1s: {:.5f}'
-            .format(epoch, optimizer.param_groups[0]['lr'], train_losses[-1],
+            .format(epoch, lr, train_losses[-1],
                     f_val_loss, f_val_acc1, f_val_f1s)
         )
         # validation(male)
-        m_val_loss, m_val_acc1, m_val_f1s = validate(
-            val_m_loader, model, criterion, device)
+        if CONFIG.adversarial:
+            m_val_loss, m_val_acc1, m_val_f1s = validate(
+                val_m_loader, model_g, criterion, device, model_h=model_h)
+        else:
+            m_val_loss, m_val_acc1, m_val_f1s = validate(
+                val_m_loader, model, criterion, device)
 
         m_val_top1_acc.append(m_val_acc1)
         m_val_f1_score.append(m_val_f1s)
 
         print(
             'epoch: {}(male)\tlr: {}\ttrain loss: {:.4f}\tval loss: {:.4f}\tval_acc1: {:.5f}\tval_f1s: {:.5f}'
-            .format(epoch, optimizer.param_groups[0]['lr'], train_losses[-1],
+            .format(epoch, lr, train_losses[-1],
                     m_val_loss, m_val_acc1, m_val_f1s)
         )
 
+        if CONFIG.adversarial:
+            print(
+                'epoch: {}(discriminator)\tlr: {}\ttrain loss: {:.4f}\tval loss: {:.4f}\tval_acc1: {:.5f}\tval_f1s: {:.5f}'
+                .format(epoch, lr, d_tr_losses[-1], d_val_losses[-1],
+                        d_val_top1_acc[-1], d_val_f1_score[-1])
+            )
+
     # write logs to dataframe and csv file
-        tmp = pd.Series([
-            epoch,
-            optimizer.param_groups[0]['lr'],
-            train_losses[-1],
-            val_losses[-1],
-            train_top1_accuracy[-1],
-            val_top1_accuracy[-1],
-            train_f1_score[-1],
-            val_f1_score[-1],
-            f_val_top1_acc[-1],
-            f_val_f1_score[-1],
-            m_val_top1_acc[-1],
-            m_val_f1_score[-1]
-        ], index=log.columns
-        )
+        if CONFIG.adversarial:
+            tmp = pd.Series([
+                epoch,
+                lr,
+                train_losses[-1],
+                val_losses[-1],
+                train_top1_accuracy[-1],
+                val_top1_accuracy[-1],
+                train_f1_score[-1],
+                val_f1_score[-1],
+                f_val_top1_acc[-1],
+                m_val_top1_acc[-1],
+                d_tr_losses[-1],
+                d_val_losses[-1],
+                d_tr_top1_acc[-1],
+                d_val_top1_acc[-1],
+                d_val_f1_score[-1]
+                ], index=log.columns
+            )
+
+        else:
+            tmp = pd.Series([
+                epoch,
+                lr,
+                train_losses[-1],
+                val_losses[-1],
+                train_top1_accuracy[-1],
+                val_top1_accuracy[-1],
+                train_f1_score[-1],
+                val_f1_score[-1],
+                f_val_top1_acc[-1],
+                f_val_f1_score[-1],
+                m_val_top1_acc[-1],
+                m_val_f1_score[-1]
+            ], index=log.columns
+            )
 
         log = log.append(tmp, ignore_index=True)
         log.to_csv(os.path.join(CONFIG.result_path, 'log.csv'), index=False)
 
-    # save models
-    torch.save(
-        model.state_dict(), os.path.join(CONFIG.result_path, 'final_model.prm'))
 
 
 if __name__ == '__main__':
