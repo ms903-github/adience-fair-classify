@@ -148,7 +148,7 @@ def validate(val_loader, model, criterion, device):
     
     return losses.avg, top1.avg, f1s
 
-def train_adv(train_loader, model_g, model_h, model_d, criterion, optimizer_gh, optimizer_d, epoch, device):
+def train_adv(train_loader, model_g, model_h, model_d, criterion, optimizer_gh, optimizer_d, epoch, device, beta=1):
     model_g.to(device)
     model_h.to(device)
     model_d.to(device)
@@ -186,8 +186,8 @@ def train_adv(train_loader, model_g, model_h, model_d, criterion, optimizer_gh, 
         batch_size = x.shape[0]
 
         # train discriminator
-        # model_g.eval()
-        # model_d.train()
+        model_g.eval()
+        model_d.train()
         feat = model_g(x)
         output = model_d(feat)
         loss_d = criterion(output, g)
@@ -200,9 +200,9 @@ def train_adv(train_loader, model_g, model_h, model_d, criterion, optimizer_gh, 
         top1_d.update(acc1[0].item(), batch_size)
 
         # train generator
-        # model_g.train()
-        # model_h.train()
-        # model_d.eval()
+        model_g.train()
+        model_h.train()
+        model_d.eval()
         feat = model_g(x)
         output = model_h(feat)
         loss_g = criterion(output, t)
@@ -210,7 +210,7 @@ def train_adv(train_loader, model_g, model_h, model_d, criterion, optimizer_gh, 
         output_d = model_d(model_g(x))
         adv_g = torch.LongTensor([0 if i == 1 else 1 for i in g]).to(device)
         loss_adv_g = criterion(output_d, adv_g)
-        loss_g = loss_g + loss_adv_g
+        loss_g = loss_g + beta*loss_adv_g
         optimizer_gh.zero_grad()
         loss_g.backward()
         optimizer_gh.step()
@@ -466,7 +466,7 @@ def main():
         # training
         if CONFIG.adversarial:
             train_loss, train_loss_d, train_acc1, train_acc1_d, train_f1s = train_adv(
-                train_loader, model_g, model_h, model_d, criterion, optimizer_gh, optimizer_d, epoch, device)
+                train_loader, model_g, model_h, model_d, criterion, optimizer_gh, optimizer_d, epoch, device, beta=CONFIG.beta)
         else:
             train_loss, train_acc1, train_f1s = train(
                 train_loader, model, criterion, optimizer, epoch, device)

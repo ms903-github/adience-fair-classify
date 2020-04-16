@@ -13,7 +13,8 @@ num_workers: 2
 max_epoch: 50
 num_f_sample: 3500
 num_m_sample: 3500
-adversarial: False
+adversarial: True
+beta: 0.3
 
 optimizer: Adam
 scheduler: onplateau
@@ -27,4 +28,4 @@ nesterov: True        # enables Nesterov momentum
 path_data: ./datasets/path.txt
 tr_data_path: ./datasets/tr_data0.txt
 te_data_path: ./datasets/te_data0.txt
-result_path: ./result/split0_ex1/
+result_path: ./result/split0_adv1/
