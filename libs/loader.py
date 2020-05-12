@@ -129,17 +129,17 @@ def load_pict2(file_path, num_f_sample, num_m_sample, transform=None):
         elif 4<=age<8:
             m_labellist.append(1)
         elif 8<=age<15:
-            m_labellist.append(3)
+            m_labellist.append(2)
         elif 15<=age<25:
-            m_labellist.append(4)
+            m_labellist.append(3)
         elif 25<=age<38:
-            m_labellist.append(5)
+            m_labellist.append(4)
         elif 38<=age<48:
-            m_labellist.append(6)
+            m_labellist.append(5)
         elif 48<=age<53:
-            m_labellist.append(7)
+            m_labellist.append(6)
         elif 53<=age:
-            m_labellist.append(8)
+            m_labellist.append(7)
         else:
             continue
         m_pathlist.append(path)
@@ -169,3 +169,93 @@ def load_pict2(file_path, num_f_sample, num_m_sample, transform=None):
                 img = self.transform(img)
             return img, label, gen
     return MyDataset(pathlist, agelist, genlist, transform=transform)
+
+# 各クラスのサンプル数を指定するloader
+def load_pict3(file_path, n_sample_list, transform=None):
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+    
+    f_pathlist = [[] for i in range(8)]
+    m_pathlist = [[] for i in range(8)]
+    
+    for line in lines:
+        path, age, gen = line.split()
+        age = int(age)
+        if 0<=age<4:
+            if gen == "f":
+                f_pathlist[0].append(path)
+            else:
+                m_pathlist[0].append(path)
+        elif 4<=age<=8:
+            if gen == "f":
+                f_pathlist[1].append(path)
+            else:
+                m_pathlist[1].append(path)
+        elif 8<age<15:
+            if gen == "f":
+                f_pathlist[2].append(path)
+            else:
+                m_pathlist[2].append(path)
+        elif 15<=age<25:
+            if gen == "f":
+                f_pathlist[3].append(path)
+            else:
+                m_pathlist[3].append(path)
+        elif 25<=age<38:
+            if gen == "f":
+                f_pathlist[4].append(path)
+            else:
+                m_pathlist[4].append(path)
+        elif 38<=age<48:
+            if gen == "f":
+                f_pathlist[5].append(path)
+            else:
+                m_pathlist[5].append(path)
+        elif 48<=age<53:
+            if gen == "f":
+                f_pathlist[6].append(path)
+            else:
+                m_pathlist[6].append(path)
+        elif 53<=age:
+            if gen == "f":
+                f_pathlist[7].append(path)
+            else:
+                m_pathlist[7].append(path)
+        else:
+            continue
+    pathlist = []
+    labellist = []
+    genlist = []
+    for c in range(8):
+        print(n_sample_list[c][0])
+        print(len(f_pathlist[c]))
+        print(n_sample_list[c][1])
+        print(len(m_pathlist[c]))
+        pathlist += random.sample(f_pathlist[c], n_sample_list[c][0])
+        pathlist += random.sample(m_pathlist[c], n_sample_list[c][1])
+        labellist += [c for i in range(n_sample_list[c][0] + n_sample_list[c][1])]
+        genlist += [0 for i in range(n_sample_list[c][0])]
+        genlist += [1 for i in range(n_sample_list[c][1])]
+    transform = transform
+    print(len(pathlist))
+    print(len(labellist))
+    print(len(genlist))
+
+    class MyDataset(Dataset):
+        def __init__(self, pathlist, labellist, genlist, transform=None):
+            self.pathlist = pathlist
+            self.labellist = labellist
+            self.genlist = genlist
+            self.transform = transform
+        def __len__(self):
+            return len(self.pathlist)
+        
+        def __getitem__(self, idx):
+            img_path = self.pathlist[idx]
+            label = self.labellist[idx]
+            gen = self.genlist[idx]
+            img = Image.open(os.path.join("./datasets/faces", img_path))
+            if self.transform:
+                img = self.transform(img)
+            return img, label, gen
+    return MyDataset(pathlist, labellist, genlist, transform=transform)

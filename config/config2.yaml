@@ -11,8 +11,6 @@ width: 224
 height: 224
 num_workers: 2
 max_epoch: 50
-num_f_sample: 3500
-num_m_sample: 3500
 adversarial: True
 beta: 0.3
 
@@ -28,5 +26,32 @@ nesterov: True        # enables Nesterov momentum
 path_data: ./datasets/path.txt
 tr_data_path: ./datasets/tr_data0.txt
 te_data_path: ./datasets/te_data0.txt
-result_path: ./result/split0_adv1/
+result_path: ./result/adv/with_core/split0
+
+n_sample_list:
+  c0:
+    f: 400
+    m: 100
+  c1:
+    f: 720
+    m: 240
+  c2:
+    f: 870
+    m: 435
+  c3:
+    f: 695
+    m: 695
+  c4:
+    f: 750
+    m: 750
+  c5:
+    f: 410
+    m: 820
+  c6:
+    f: 100
+    m: 270
+  c7:
+    f: 88
+    m: 352
+  
 

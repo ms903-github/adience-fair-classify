@@ -32,7 +32,7 @@ for line in lines_tr:
         continue
     age_l = age_l.strip("(").strip(",")
     age_h = age_h.strip(")")
-    age = int(age_h) + int(age_l) // 2
+    age = (int(age_h) + int(age_l)) // 2
     gen = line.split()[5]
     path = fid + "/" + "coarse_tilt_aligned_face." + pid + "." + imid
     n_lines_tr.append(path + " " + str(age) + " " + gen + "\n")
@@ -48,7 +48,7 @@ for line in lines_te:
         continue
     age_l = age_l.strip("(").strip(",")
     age_h = age_h.strip(")")
-    age = int(age_h) + int(age_l) // 2
+    age = (int(age_h) + int(age_l)) // 2
     gen = line.split()[5]
     path = fid + "/" + "coarse_tilt_aligned_face." + pid + "." + imid
     n_lines_te.append(path + " " + str(age) + " " + gen + "\n")

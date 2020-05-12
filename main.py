@@ -19,7 +19,7 @@ import torchvision.models as models
 
 
 from libs.functions import AverageMeter, ProgressMeter, accuracy
-from libs.loader import load_pict, load_pict2
+from libs.loader import load_pict, load_pict2, load_pict3
 from libs.models import Classifier_resnet, Classifier, Discriminator
 # from libs.transformer import MyTransformer
 
@@ -43,13 +43,13 @@ def get_arguments():
 
 
 def train(train_loader, model, criterion, optimizer, epoch, device):
-    # 平均を計算してくれるクラス
+    # avagate meter
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
 
-    # 進捗状況を表示してくれるクラス
+    # progress meter
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, data_time, losses, top1],
@@ -152,7 +152,7 @@ def train_adv(train_loader, model_g, model_h, model_d, criterion, optimizer_gh, 
     model_g.to(device)
     model_h.to(device)
     model_d.to(device)
-    # 平均を計算してくれるクラス
+    # average meter
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses_g = AverageMeter('Loss_g', ':.4e')
@@ -160,7 +160,7 @@ def train_adv(train_loader, model_g, model_h, model_d, criterion, optimizer_gh, 
     losses_d = AverageMeter('Loss_d', ':.4e')
     top1_d = AverageMeter('Acc@1_d', ':6.2f')
 
-    # 進捗状況を表示してくれるクラス
+    # progress meter
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, data_time, losses_g, top1_g, losses_d, top1_d],
@@ -315,7 +315,10 @@ def main():
     # test_data = load_pict(CONFIG.te_path_data, transform=transform)
     # if data are given in directory format
     # train_data = load_pict(CONFIG.tr_data_path, transform=transform)
-    train_data = load_pict2(CONFIG.tr_data_path, CONFIG.num_f_sample, CONFIG.num_m_sample, transform=transform)
+    # train_data = load_pict2(CONFIG.tr_data_path, CONFIG.num_f_sample, CONFIG.num_m_sample, transform=transform)
+    n = CONFIG.n_sample_list
+    n_sample_list = [[n.c0.f, n.c0.m], [n.c1.f, n.c1.m], [n.c2.f, n.c2.m], [n.c3.f, n.c3.m], [n.c4.f, n.c4.m], [n.c5.f, n.c5.m], [n.c6.f, n.c6.m], [n.c7.f, n.c7.m]]
+    train_data = load_pict3(CONFIG.tr_data_path, n_sample_list, transform=transform)
     test_data = load_pict(CONFIG.te_data_path, transform=transform)
     test_f_data = load_pict(CONFIG.te_data_path, gen_mode="female", transform=transform)
     test_m_data = load_pict(CONFIG.te_data_path, gen_mode="male", transform=transform)
